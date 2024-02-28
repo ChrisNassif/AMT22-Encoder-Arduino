@@ -26,6 +26,7 @@ class AMT22_Encoder {
     public:
         AMT22_Encoder(int chip_select_pin_);
         float get_motor_angle();
+        void zero_encoder_value();
 
     private:
         uint8_t* read_position();
