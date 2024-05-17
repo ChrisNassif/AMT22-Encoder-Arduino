@@ -11,7 +11,7 @@ AMT22_Encoder::AMT22_Encoder(int chip_select_pin_) {
     // Arduino UNO has a clock rate of 16 MHz
     // The encoder has a maximum clock rate of 2 MHz
     SPI.beginTransaction(SPISettings(SPISettings(1000000, MSBFIRST, SPI_MODE0))); 
-
+    pinMode(chip_select_pin, OUTPUT);
     digitalWrite(chip_select_pin, HIGH);  // disable
 }
 
@@ -22,6 +22,7 @@ float AMT22_Encoder::get_motor_angle() {
     // Serial.println("hi");
     // Serial.print(packet_array[0]); Serial.print(", "); Serial.println(packet_array[1]);
     if (verify_packet(packet_array) == 1) {
+        // Serial.println("hi");
         cur_angle = parse_angle(packet_array);
     }
     return cur_angle;
