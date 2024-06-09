@@ -1,18 +1,21 @@
 #include "AMT22_Encoder.h"
 
-   
+
 // PUBLIC METHODS
 AMT22_Encoder::AMT22_Encoder(int chip_select_pin_) {
     chip_select_pin = chip_select_pin_;
 
     SPI.begin();
     // Serial.begin(9600);
-    
+
     // Arduino UNO has a clock rate of 16 MHz
     // The encoder has a maximum clock rate of 2 MHz
-    SPI.beginTransaction(SPISettings(SPISettings(1000000, MSBFIRST, SPI_MODE0))); 
+    SPI.beginTransaction(SPISettings(SPISettings(1000000, MSBFIRST, SPI_MODE0)));
     pinMode(chip_select_pin, OUTPUT);
     digitalWrite(chip_select_pin, HIGH);  // disable
+
+    turn_count = 0;
+    cur_angle = 0;
 }
 
 float AMT22_Encoder::get_motor_angle() {
@@ -21,12 +24,37 @@ float AMT22_Encoder::get_motor_angle() {
     uint8_t* packet_array = read_position();
     // Serial.println("hi");
     // Serial.print(packet_array[0]); Serial.print(", "); Serial.println(packet_array[1]);
-    if (verify_packet(packet_array) == 1) {
-        // Serial.println("hi");
-        cur_angle = parse_angle(packet_array);
-    }
-    return cur_angle;
+    if (verify_packet(packet_array) != 1) return cur_angle;
 
+    float next_angle = parse_angle(packet_array);
+
+    //Serial.println(cur_angle);
+    //Serial.println(next_angle);
+    if (cur_angle > 270 && next_angle < 90) turn_count += 1;
+    if (cur_angle < 90 && next_angle > 270) turn_count -= 1;
+
+    cur_angle = next_angle;
+    return cur_angle;
+}
+
+int AMT22_Encoder::get_turn_count() {
+    // delayMicroseconds(READ_RATE);
+
+    // uint8_t* packet_array = read_position_multiturn();
+    // uint8_t turn_count_packet[2] = {packet_array[2], packet_array[3]};
+
+    // /*if (verify_packet(turn_count_packet) == 1) {
+    //     turn_count = parse_angle(turn_count_packet);
+    // }*/
+    // //turn_count = parse_angle(turn_count_packet);
+
+    // int turn_count = turn_count_packet[1];
+
+    // if (turn_count > 127)
+    //     turn_count = turn_count - 256;
+
+
+    return turn_count;
 }
 
 void AMT22_Encoder::zero_encoder_value() {
@@ -34,19 +62,11 @@ void AMT22_Encoder::zero_encoder_value() {
 
     digitalWrite(chip_select_pin, LOW); // enable
 
-
     delayMicroseconds(3);
     SPI.transfer(NO_OP);
     delayMicroseconds(3);
     SPI.transfer(SET_ZERO_POINT);
     delayMicroseconds(3);
-    // SPI.transfer(SET_ZERO_POINT);
-    // delayMicroseconds(3);
-    // SPI.transfer(NO_OP);
-    // delayMicroseconds(3);
-    // SPI.transfer(SET_ZERO_POINT);
-    // delayMicroseconds(3);
-    // delay(100000000);
     digitalWrite(chip_select_pin, HIGH); // disable
 
 }
@@ -59,7 +79,7 @@ uint8_t* AMT22_Encoder::read_position() {
 
     digitalWrite(chip_select_pin, LOW); // enable
 
-    static uint8_t bytes_read [2] = {0x00, 0x00};
+    static uint8_t bytes_read[2] = { 0x00, 0x00 };
     delayMicroseconds(3);
     bytes_read[0] = SPI.transfer(NO_OP);
     delayMicroseconds(3);
@@ -67,14 +87,37 @@ uint8_t* AMT22_Encoder::read_position() {
     delayMicroseconds(3);
 
     digitalWrite(chip_select_pin, HIGH); // disable
-    
+
     return bytes_read;
+}
+
+uint8_t* AMT22_Encoder::read_position_multiturn() {
+
+    delayMicroseconds(40);
+
+    digitalWrite(chip_select_pin, LOW); // enable
+
+    static uint8_t bytes_read[4] = { 0x00, 0x00, 0x00, 0x00 };
+    delayMicroseconds(3);
+    bytes_read[0] = SPI.transfer(NO_OP);
+    delayMicroseconds(3);
+    bytes_read[1] = SPI.transfer(READ_TURNS);
+    delayMicroseconds(3);
+    bytes_read[2] = SPI.transfer(NO_OP);
+    delayMicroseconds(3);
+    bytes_read[3] = SPI.transfer(NO_OP);
+    delayMicroseconds(3);
+
+    digitalWrite(chip_select_pin, HIGH); // disable
+
+    return bytes_read;
+
 }
 
 bool AMT22_Encoder::get_bit(uint8_t byte, int index) {
     // checks the bit at the index in the byte in LSB first
     // for example with the byte 10000110: index 0 is 0, index 1 is 1 and so on
-    return (byte & 1<<(index)) != 0;
+    return (byte & 1 << (index)) != 0;
 }
 
 bool AMT22_Encoder::verify_packet(uint8_t packet_contents[2]) {
@@ -83,24 +126,24 @@ bool AMT22_Encoder::verify_packet(uint8_t packet_contents[2]) {
 
     bool odd_parity = get_bit(first_byte, 7);
     bool even_parity = get_bit(first_byte, 6);
-    
-    bool odd_bits [7] = {
-        get_bit(first_byte, 1), get_bit(first_byte, 3), get_bit(first_byte, 5), 
+
+    bool odd_bits[7] = {
+        get_bit(first_byte, 1), get_bit(first_byte, 3), get_bit(first_byte, 5),
         get_bit(second_byte, 1), get_bit(second_byte, 3), get_bit(second_byte, 5), get_bit(second_byte, 7)
     };
 
-    bool even_bits [7] = {
-        get_bit(first_byte, 0), get_bit(first_byte, 2), get_bit(first_byte, 4), 
+    bool even_bits[7] = {
+        get_bit(first_byte, 0), get_bit(first_byte, 2), get_bit(first_byte, 4),
         get_bit(second_byte, 0), get_bit(second_byte, 2), get_bit(second_byte, 4), get_bit(second_byte, 6)
     };
 
     if (odd_parity == (odd_bits[0] ^ odd_bits[1] ^ odd_bits[2] ^ odd_bits[3] ^ odd_bits[4] ^ odd_bits[5] ^ odd_bits[6])) {
         return false;
     }
-    
+
     if (even_parity == (even_bits[0] ^ even_bits[1] ^ even_bits[2] ^ even_bits[3] ^ even_bits[4] ^ even_bits[5] ^ even_bits[6])) {
         return false;
-    } 
+    }
 
     return true;
 }
